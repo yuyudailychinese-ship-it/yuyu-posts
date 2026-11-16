@@ -1,0 +1,48 @@
+name: Daily Yuyu post
+
+on:
+  schedule:
+    # 07:00 UTC = 09:00 in Finland in winter, 10:00 in summer. GitHub may start it a few minutes late.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check = test the token, dry-run = show the next post, publish = post it now'
+        type: choice
+        options: [check, dry-run, publish]
+        default: check
+
+permissions:
+  contents: write
+
+# Never run two posts at once.
+concurrency:
+  group: yuyu-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publish
+        env:
+          MODE: ${{ github.event_name == 'schedule' && 'publish' || inputs.mode }}
+          IG_USER_ID: '17841457992974351'
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          RAW_BASE: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
+        run: node publish.mjs
+
+      - name: Save progress
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'publish' }}
+        run: |
+          git config user.name "yuyu-bot"
+          git config user.email "yuyu-bot@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "Posted $(node -p "require('./state.json').lastPosted")"
+          git push
