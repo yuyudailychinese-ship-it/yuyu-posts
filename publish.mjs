@@ -119,7 +119,19 @@ const carousel = await graph('POST', `${IG_USER_ID}/media`, {
   caption,
 });
 await waitReady(carousel.id);
-const published = await graph('POST', `${IG_USER_ID}/media_publish`, { creation_id: carousel.id });
+// Instagram sometimes answers "Media ID is not available" (code 9007) for a few seconds after the
+// carousel says FINISHED. Publishing failed in that case, so it's safe to wait and try again.
+let published;
+for (let attempt = 1; ; attempt++) {
+  try {
+    published = await graph('POST', `${IG_USER_ID}/media_publish`, { creation_id: carousel.id });
+    break;
+  } catch (e) {
+    if (!/code 9007\)/.test(e.message) || attempt >= 6) throw e;
+    console.log(`  not ready to publish yet (attempt ${attempt}), retrying in 15 s…`);
+    await new Promise((r) => setTimeout(r, 15000));
+  }
+}
 console.log(`✓ Published post ${next}: media ${published.id}`);
 
 state.lastPosted = next;
